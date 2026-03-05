@@ -177,11 +177,16 @@ netlify sites:list
 - `POST /api/tools/yt-dlp`
 - `POST /api/tools/yt-dlp/update`
 - `POST /api/tools/uploads`
+- `GET /api/tools/ffmpeg/inbox`
 - `POST /api/tools/ffmpeg/convert`
 - `GET /api/tools/downloads/media`
 - `POST /api/tools/repo/create`
 - `POST /api/tools/native/whois`
 - `POST /api/tools/native/dns`
+- `POST /api/tools/native/ping`
+- `POST /api/tools/native/traceroute`
+- `POST /api/tools/native/ip`
+- `POST /api/tools/native/ss`
 
 ## Real Examples
 
@@ -236,13 +241,16 @@ curl -X POST "http://localhost:8000/api/email/send" \
   }'
 ```
 
-### Convert uploaded media with ffmpeg
+### Convert media with ffmpeg (workspace inbox only)
 
 ```bash
+# Put/import files into:
+# backend/downloads/ffmpeg/inbox
+
 curl -X POST "http://localhost:8000/api/tools/ffmpeg/convert" \
   -H "Content-Type: application/json" \
   -d '{
-    "input_path": "/absolute/path/to/input.mp4",
+    "input_path": "/absolute/path/to/backend/downloads/ffmpeg/inbox/input.mp4",
     "output_name": "clip_720p",
     "output_format": "mp4",
     "scale": "1280:720",

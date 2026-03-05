@@ -94,10 +94,46 @@ export default function ToolsPage({ apiBase, onRepoCreated }) {
   const [repoResult, setRepoResult] = useState('');
   const [mediaLibrary, setMediaLibrary] = useState([]);
   const [mediaLoading, setMediaLoading] = useState(false);
+  const [ffInbox, setFfInbox] = useState({ input_dir: '', output_dir: '', files: [] });
   const ffUploadInputRef = useRef(null);
-  const [nativeForm, setNativeForm] = useState({ whoisTarget: '', dnsDomain: '' });
-  const [nativeResult, setNativeResult] = useState({ whois: '', dns: '' });
-  const [nativeLoading, setNativeLoading] = useState({ whois: false, dns: false });
+  const [nativeForm, setNativeForm] = useState({
+    whoisTarget: '',
+    dnsDomain: '',
+    pingTarget: '',
+    pingCount: '4',
+    pingInterval: '0.3',
+    pingTimeout: '3',
+    pingExtraArgs: '',
+    traceTarget: '',
+    traceMaxHops: '20',
+    traceWait: '3',
+    traceQueries: '1',
+    traceUseIcmp: false,
+    traceExtraArgs: '',
+    ipScope: 'addr',
+    ipInterface: '',
+    ipExtraArgs: '',
+    ssMode: 'listening',
+    ssProtocol: 'all',
+    ssExtended: false,
+    ssExtraArgs: ''
+  });
+  const [nativeResult, setNativeResult] = useState({
+    whois: '',
+    dns: '',
+    ping: '',
+    traceroute: '',
+    ip: '',
+    ss: ''
+  });
+  const [nativeLoading, setNativeLoading] = useState({
+    whois: false,
+    dns: false,
+    ping: false,
+    traceroute: false,
+    ip: false,
+    ss: false
+  });
 
   const loadStatus = async () => {
     try {
@@ -111,6 +147,7 @@ export default function ToolsPage({ apiBase, onRepoCreated }) {
   useEffect(() => {
     loadStatus();
     loadMediaLibrary();
+    loadFfInbox();
   }, [apiBase]);
 
   const loadMediaLibrary = async () => {
@@ -122,6 +159,19 @@ export default function ToolsPage({ apiBase, onRepoCreated }) {
       setMediaLibrary([]);
     } finally {
       setMediaLoading(false);
+    }
+  };
+
+  const loadFfInbox = async () => {
+    try {
+      const res = await axios.get(`${apiBase}/api/tools/ffmpeg/inbox`);
+      setFfInbox({
+        input_dir: res.data?.input_dir || '',
+        output_dir: res.data?.output_dir || '',
+        files: res.data?.files || []
+      });
+    } catch (e) {
+      setFfInbox({ input_dir: '', output_dir: '', files: [] });
     }
   };
 
@@ -165,12 +215,13 @@ export default function ToolsPage({ apiBase, onRepoCreated }) {
       setFfResult('Running ffmpeg...');
       try {
         const res = await axios.post(`${apiBase}/api/tools/ffmpeg/convert`, ffForm);
-        setFfResult(`Success\nOutput file: ${res.data.output_file}`);
+        setFfResult(`Success\nInput file: ${res.data.input_file}\nOutput file: ${res.data.output_file}`);
       } catch (e) {
         setFfResult(`Error: ${e.response?.data?.detail || e.message}`);
       }
       setFfSection('output');
       loadMediaLibrary();
+      loadFfInbox();
     });
 
   const uploadFfInput = async (event) => {
@@ -184,8 +235,9 @@ export default function ToolsPage({ apiBase, onRepoCreated }) {
         headers: { 'Content-Type': 'multipart/form-data' }
       });
       setFfForm((prev) => ({ ...prev, input_path: res.data.input_path }));
-      setFfResult(`File uploaded\nInput file path: ${res.data.input_path}`);
+      setFfResult(`File imported to ffmpeg inbox\nInput file path: ${res.data.input_path}`);
       loadMediaLibrary();
+      loadFfInbox();
     } catch (e) {
       setFfResult(`Upload Error: ${e.response?.data?.detail || e.message}`);
     } finally {
@@ -238,13 +290,87 @@ export default function ToolsPage({ apiBase, onRepoCreated }) {
     }
   };
 
+  const runPing = async () => {
+    setNativeLoading((prev) => ({ ...prev, ping: true }));
+    try {
+      const res = await axios.post(`${apiBase}/api/tools/native/ping`, {
+        target: nativeForm.pingTarget,
+        count: nativeForm.pingCount,
+        interval_sec: nativeForm.pingInterval,
+        timeout_sec: nativeForm.pingTimeout,
+        extra_args: nativeForm.pingExtraArgs
+      });
+      setNativeResult((prev) => ({ ...prev, ping: res.data?.output || '' }));
+    } catch (e) {
+      setNativeResult((prev) => ({ ...prev, ping: `Error: ${e.response?.data?.detail || e.message}` }));
+    } finally {
+      setNativeLoading((prev) => ({ ...prev, ping: false }));
+    }
+  };
+
+  const runTraceroute = async () => {
+    setNativeLoading((prev) => ({ ...prev, traceroute: true }));
+    try {
+      const res = await axios.post(`${apiBase}/api/tools/native/traceroute`, {
+        target: nativeForm.traceTarget,
+        max_hops: nativeForm.traceMaxHops,
+        wait_sec: nativeForm.traceWait,
+        queries: nativeForm.traceQueries,
+        use_icmp: nativeForm.traceUseIcmp,
+        extra_args: nativeForm.traceExtraArgs
+      });
+      setNativeResult((prev) => ({ ...prev, traceroute: res.data?.output || '' }));
+    } catch (e) {
+      setNativeResult((prev) => ({ ...prev, traceroute: `Error: ${e.response?.data?.detail || e.message}` }));
+    } finally {
+      setNativeLoading((prev) => ({ ...prev, traceroute: false }));
+    }
+  };
+
+  const runIp = async () => {
+    setNativeLoading((prev) => ({ ...prev, ip: true }));
+    try {
+      const res = await axios.post(`${apiBase}/api/tools/native/ip`, {
+        scope: nativeForm.ipScope,
+        interface: nativeForm.ipInterface,
+        extra_args: nativeForm.ipExtraArgs
+      });
+      setNativeResult((prev) => ({ ...prev, ip: res.data?.output || '' }));
+    } catch (e) {
+      setNativeResult((prev) => ({ ...prev, ip: `Error: ${e.response?.data?.detail || e.message}` }));
+    } finally {
+      setNativeLoading((prev) => ({ ...prev, ip: false }));
+    }
+  };
+
+  const runSs = async () => {
+    setNativeLoading((prev) => ({ ...prev, ss: true }));
+    try {
+      const res = await axios.post(`${apiBase}/api/tools/native/ss`, {
+        mode: nativeForm.ssMode,
+        protocol: nativeForm.ssProtocol,
+        extended: nativeForm.ssExtended,
+        extra_args: nativeForm.ssExtraArgs
+      });
+      setNativeResult((prev) => ({ ...prev, ss: res.data?.output || '' }));
+    } catch (e) {
+      setNativeResult((prev) => ({ ...prev, ss: `Error: ${e.response?.data?.detail || e.message}` }));
+    } finally {
+      setNativeLoading((prev) => ({ ...prev, ss: false }));
+    }
+  };
+
   const statusItems = toolsStatus
     ? [
         { label: `yt-dlp: ${toolsStatus.yt_dlp ? 'available' : 'missing'}`, ok: toolsStatus.yt_dlp },
         { label: `ffmpeg: ${toolsStatus.ffmpeg ? 'available' : 'missing'}`, ok: toolsStatus.ffmpeg },
         { label: `gh: ${toolsStatus.gh ? 'available' : 'missing'}`, ok: toolsStatus.gh },
         { label: `whois: ${toolsStatus.whois ? 'available' : 'missing'}`, ok: toolsStatus.whois },
-        { label: `dns: ${toolsStatus.dig || toolsStatus.nslookup ? 'available' : 'missing'}`, ok: toolsStatus.dig || toolsStatus.nslookup }
+        { label: `dns: ${toolsStatus.dig || toolsStatus.nslookup ? 'available' : 'missing'}`, ok: toolsStatus.dig || toolsStatus.nslookup },
+        { label: `ping: ${toolsStatus.ping ? 'available' : 'missing'}`, ok: toolsStatus.ping },
+        { label: `trace: ${toolsStatus.traceroute ? 'available' : 'missing'}`, ok: toolsStatus.traceroute },
+        { label: `ip: ${toolsStatus.ip ? 'available' : 'missing'}`, ok: toolsStatus.ip },
+        { label: `ss: ${toolsStatus.ss ? 'available' : 'missing'}`, ok: toolsStatus.ss }
       ]
     : [];
 
@@ -451,13 +577,21 @@ export default function ToolsPage({ apiBase, onRepoCreated }) {
 
             {ffSection === 'basic' && (
               <Stack spacing={1.5}>
+                <Alert severity="info">
+                  ffmpeg now accepts input files only from the workspace inbox folder.
+                  <br />
+                  {ffInbox.input_dir || 'Loading inbox path...'}
+                </Alert>
                 <Stack direction={{ xs: 'column', md: 'row' }} spacing={1}>
                   <Button
                     variant="outlined"
                     startIcon={<UploadFileIcon />}
                     onClick={() => ffUploadInputRef.current?.click()}
                   >
-                    Import Local File
+                    Import File To Inbox
+                  </Button>
+                  <Button variant="outlined" startIcon={<RefreshIcon />} onClick={loadFfInbox}>
+                    Refresh Inbox Files
                   </Button>
                   <input
                     ref={ffUploadInputRef}
@@ -467,11 +601,26 @@ export default function ToolsPage({ apiBase, onRepoCreated }) {
                   />
                 </Stack>
                 <TextField
-                  label="Input File Path"
+                  select
+                  label="Input File (From Inbox)"
                   value={ffForm.input_path}
                   onChange={(event) => setFfForm({ ...ffForm, input_path: event.target.value })}
                   fullWidth
                   size="small"
+                  helperText={ffInbox.files.length ? `${ffInbox.files.length} files available in inbox` : 'No files in inbox yet'}
+                >
+                  {ffInbox.files.map((item) => (
+                    <MenuItem key={item.path} value={item.path}>
+                      {item.relative_path}
+                    </MenuItem>
+                  ))}
+                </TextField>
+                <TextField
+                  label="Selected Input Path"
+                  value={ffForm.input_path}
+                  fullWidth
+                  size="small"
+                  InputProps={{ readOnly: true }}
                 />
                 <Grid container spacing={1.5}>
                   <Grid item xs={12} md={6}>
@@ -805,6 +954,294 @@ export default function ToolsPage({ apiBase, onRepoCreated }) {
                 <TextField
                   label="DNS Output"
                   value={nativeResult.dns}
+                  multiline
+                  minRows={8}
+                  fullWidth
+                  sx={{ mt: 1.2 }}
+                  InputProps={{ readOnly: true }}
+                />
+              </Box>
+            </Card>
+
+            <Card variant="outlined">
+              <Box sx={{ p: 1.5, borderBottom: '1px solid', borderColor: 'divider' }}>
+                <Typography variant="subtitle2">Ping</Typography>
+              </Box>
+              <Box sx={{ p: 1.5 }}>
+                <Grid container spacing={1.2}>
+                  <Grid item xs={12} md={4}>
+                    <TextField
+                      label="Target"
+                      placeholder="1.1.1.1"
+                      value={nativeForm.pingTarget}
+                      onChange={(event) => setNativeForm({ ...nativeForm, pingTarget: event.target.value })}
+                      fullWidth
+                      size="small"
+                    />
+                  </Grid>
+                  <Grid item xs={6} md={2}>
+                    <TextField
+                      label="Count"
+                      value={nativeForm.pingCount}
+                      onChange={(event) => setNativeForm({ ...nativeForm, pingCount: event.target.value })}
+                      fullWidth
+                      size="small"
+                    />
+                  </Grid>
+                  <Grid item xs={6} md={2}>
+                    <TextField
+                      label="Interval"
+                      value={nativeForm.pingInterval}
+                      onChange={(event) => setNativeForm({ ...nativeForm, pingInterval: event.target.value })}
+                      fullWidth
+                      size="small"
+                    />
+                  </Grid>
+                  <Grid item xs={6} md={2}>
+                    <TextField
+                      label="Timeout"
+                      value={nativeForm.pingTimeout}
+                      onChange={(event) => setNativeForm({ ...nativeForm, pingTimeout: event.target.value })}
+                      fullWidth
+                      size="small"
+                    />
+                  </Grid>
+                  <Grid item xs={12} md={8}>
+                    <TextField
+                      label="Extra Args (Optional)"
+                      placeholder="-4"
+                      value={nativeForm.pingExtraArgs}
+                      onChange={(event) => setNativeForm({ ...nativeForm, pingExtraArgs: event.target.value })}
+                      fullWidth
+                      size="small"
+                    />
+                  </Grid>
+                  <Grid item xs={12} md={4}>
+                    <Button variant="contained" onClick={runPing} disabled={nativeLoading.ping || !nativeForm.pingTarget} fullWidth>
+                      {nativeLoading.ping ? 'Running...' : 'Run Ping'}
+                    </Button>
+                  </Grid>
+                </Grid>
+                <TextField
+                  label="Ping Output"
+                  value={nativeResult.ping}
+                  multiline
+                  minRows={8}
+                  fullWidth
+                  sx={{ mt: 1.2 }}
+                  InputProps={{ readOnly: true }}
+                />
+              </Box>
+            </Card>
+
+            <Card variant="outlined">
+              <Box sx={{ p: 1.5, borderBottom: '1px solid', borderColor: 'divider' }}>
+                <Typography variant="subtitle2">Traceroute</Typography>
+              </Box>
+              <Box sx={{ p: 1.5 }}>
+                <Grid container spacing={1.2}>
+                  <Grid item xs={12} md={4}>
+                    <TextField
+                      label="Target"
+                      placeholder="example.com"
+                      value={nativeForm.traceTarget}
+                      onChange={(event) => setNativeForm({ ...nativeForm, traceTarget: event.target.value })}
+                      fullWidth
+                      size="small"
+                    />
+                  </Grid>
+                  <Grid item xs={4} md={2}>
+                    <TextField
+                      label="Max Hops"
+                      value={nativeForm.traceMaxHops}
+                      onChange={(event) => setNativeForm({ ...nativeForm, traceMaxHops: event.target.value })}
+                      fullWidth
+                      size="small"
+                    />
+                  </Grid>
+                  <Grid item xs={4} md={2}>
+                    <TextField
+                      label="Wait"
+                      value={nativeForm.traceWait}
+                      onChange={(event) => setNativeForm({ ...nativeForm, traceWait: event.target.value })}
+                      fullWidth
+                      size="small"
+                    />
+                  </Grid>
+                  <Grid item xs={4} md={2}>
+                    <TextField
+                      label="Queries"
+                      value={nativeForm.traceQueries}
+                      onChange={(event) => setNativeForm({ ...nativeForm, traceQueries: event.target.value })}
+                      fullWidth
+                      size="small"
+                    />
+                  </Grid>
+                  <Grid item xs={12} md={2}>
+                    <FormControlLabel
+                      control={
+                        <Checkbox
+                          checked={nativeForm.traceUseIcmp}
+                          onChange={(event) => setNativeForm({ ...nativeForm, traceUseIcmp: event.target.checked })}
+                        />
+                      }
+                      label="ICMP"
+                    />
+                  </Grid>
+                  <Grid item xs={12} md={8}>
+                    <TextField
+                      label="Extra Args (Optional)"
+                      placeholder="-n"
+                      value={nativeForm.traceExtraArgs}
+                      onChange={(event) => setNativeForm({ ...nativeForm, traceExtraArgs: event.target.value })}
+                      fullWidth
+                      size="small"
+                    />
+                  </Grid>
+                  <Grid item xs={12} md={4}>
+                    <Button
+                      variant="contained"
+                      onClick={runTraceroute}
+                      disabled={nativeLoading.traceroute || !nativeForm.traceTarget}
+                      fullWidth
+                    >
+                      {nativeLoading.traceroute ? 'Running...' : 'Run Traceroute'}
+                    </Button>
+                  </Grid>
+                </Grid>
+                <TextField
+                  label="Traceroute Output"
+                  value={nativeResult.traceroute}
+                  multiline
+                  minRows={8}
+                  fullWidth
+                  sx={{ mt: 1.2 }}
+                  InputProps={{ readOnly: true }}
+                />
+              </Box>
+            </Card>
+
+            <Card variant="outlined">
+              <Box sx={{ p: 1.5, borderBottom: '1px solid', borderColor: 'divider' }}>
+                <Typography variant="subtitle2">IP Inspect</Typography>
+              </Box>
+              <Box sx={{ p: 1.5 }}>
+                <Grid container spacing={1.2}>
+                  <Grid item xs={12} md={3}>
+                    <TextField
+                      select
+                      label="Scope"
+                      value={nativeForm.ipScope}
+                      onChange={(event) => setNativeForm({ ...nativeForm, ipScope: event.target.value })}
+                      fullWidth
+                      size="small"
+                    >
+                      <MenuItem value="addr">addr</MenuItem>
+                      <MenuItem value="route">route</MenuItem>
+                      <MenuItem value="link">link</MenuItem>
+                    </TextField>
+                  </Grid>
+                  <Grid item xs={12} md={3}>
+                    <TextField
+                      label="Interface (Optional)"
+                      placeholder="eth0"
+                      value={nativeForm.ipInterface}
+                      onChange={(event) => setNativeForm({ ...nativeForm, ipInterface: event.target.value })}
+                      fullWidth
+                      size="small"
+                    />
+                  </Grid>
+                  <Grid item xs={12} md={4}>
+                    <TextField
+                      label="Extra Args (Optional)"
+                      placeholder="scope global"
+                      value={nativeForm.ipExtraArgs}
+                      onChange={(event) => setNativeForm({ ...nativeForm, ipExtraArgs: event.target.value })}
+                      fullWidth
+                      size="small"
+                    />
+                  </Grid>
+                  <Grid item xs={12} md={2}>
+                    <Button variant="contained" onClick={runIp} disabled={nativeLoading.ip} fullWidth>
+                      {nativeLoading.ip ? 'Running...' : 'Run IP'}
+                    </Button>
+                  </Grid>
+                </Grid>
+                <TextField
+                  label="IP Output"
+                  value={nativeResult.ip}
+                  multiline
+                  minRows={8}
+                  fullWidth
+                  sx={{ mt: 1.2 }}
+                  InputProps={{ readOnly: true }}
+                />
+              </Box>
+            </Card>
+
+            <Card variant="outlined">
+              <Box sx={{ p: 1.5, borderBottom: '1px solid', borderColor: 'divider' }}>
+                <Typography variant="subtitle2">Socket Summary (ss)</Typography>
+              </Box>
+              <Box sx={{ p: 1.5 }}>
+                <Grid container spacing={1.2}>
+                  <Grid item xs={12} md={3}>
+                    <TextField
+                      select
+                      label="Mode"
+                      value={nativeForm.ssMode}
+                      onChange={(event) => setNativeForm({ ...nativeForm, ssMode: event.target.value })}
+                      fullWidth
+                      size="small"
+                    >
+                      <MenuItem value="listening">listening</MenuItem>
+                      <MenuItem value="all">all</MenuItem>
+                    </TextField>
+                  </Grid>
+                  <Grid item xs={12} md={3}>
+                    <TextField
+                      select
+                      label="Protocol"
+                      value={nativeForm.ssProtocol}
+                      onChange={(event) => setNativeForm({ ...nativeForm, ssProtocol: event.target.value })}
+                      fullWidth
+                      size="small"
+                    >
+                      <MenuItem value="all">all</MenuItem>
+                      <MenuItem value="tcp">tcp</MenuItem>
+                      <MenuItem value="udp">udp</MenuItem>
+                    </TextField>
+                  </Grid>
+                  <Grid item xs={12} md={2}>
+                    <FormControlLabel
+                      control={
+                        <Checkbox
+                          checked={nativeForm.ssExtended}
+                          onChange={(event) => setNativeForm({ ...nativeForm, ssExtended: event.target.checked })}
+                        />
+                      }
+                      label="Extended"
+                    />
+                  </Grid>
+                  <Grid item xs={12} md={4}>
+                    <TextField
+                      label="Extra Args (Optional)"
+                      placeholder="state established"
+                      value={nativeForm.ssExtraArgs}
+                      onChange={(event) => setNativeForm({ ...nativeForm, ssExtraArgs: event.target.value })}
+                      fullWidth
+                      size="small"
+                    />
+                  </Grid>
+                  <Grid item xs={12}>
+                    <Button variant="contained" onClick={runSs} disabled={nativeLoading.ss} fullWidth>
+                      {nativeLoading.ss ? 'Running...' : 'Run ss'}
+                    </Button>
+                  </Grid>
+                </Grid>
+                <TextField
+                  label="ss Output"
+                  value={nativeResult.ss}
                   multiline
                   minRows={8}
                   fullWidth
