@@ -11,7 +11,7 @@ from urllib.request import Request, urlopen
 
 from fastapi import APIRouter, HTTPException
 
-from ..state import BASE_CLONE_DIR, active_containers
+from ..state import BASE_CLONE_DIR, NEW_SITES_DIR, active_containers
 from ..utils import command_exists, get_config
 
 router = APIRouter()
@@ -36,6 +36,7 @@ MEDIA_EXTENSIONS = {
 IGNORE_DIRS = {"node_modules", ".git", "dist", "build", ".next", ".cache", "__pycache__"}
 META_CACHE_TTL_SECONDS = 900
 SITE_META_CACHE = {}
+LOCAL_SITE_PREFIX = "local:"
 
 
 def _safe_slug(value: str) -> str:
@@ -57,14 +58,17 @@ def _candidate_repo_paths(site: dict, repo_url: str) -> list[Path]:
     repo_name = _repo_name_from_url(repo_url)
     if repo_name:
         candidates.append(Path(BASE_CLONE_DIR) / repo_name)
+        candidates.append(Path(NEW_SITES_DIR) / repo_name)
 
     site_name_slug = _safe_slug(site.get("name", ""))
     if site_name_slug:
         candidates.append(Path(BASE_CLONE_DIR) / site_name_slug)
+        candidates.append(Path(NEW_SITES_DIR) / site_name_slug)
 
     site_id_slug = _safe_slug(site.get("id", ""))
     if site_id_slug:
         candidates.append(Path(BASE_CLONE_DIR) / site_id_slug)
+        candidates.append(Path(NEW_SITES_DIR) / site_id_slug)
 
     deduped = []
     seen = set()
@@ -104,10 +108,107 @@ def _resolve_site_repo(site: dict) -> dict:
     }
 
 
-def _find_site_by_id(site_id: str) -> dict:
+def _get_running_port(repo_name: str):
+    if not repo_name:
+        return None
+    container_name = f"ghost_{repo_name.lower().replace('.', '_')}"
+    check = subprocess.run(["podman", "inspect", "-f", "{{.State.Running}}", container_name], capture_output=True, text=True)
+    if check.stdout.strip() == "true":
+        return active_containers.get(repo_name, {}).get("port")
+    return None
+
+
+def _build_local_site(repo_path: Path) -> dict:
+    repo_name = repo_path.name
+    meta_path = repo_path / "site.meta.json"
+    meta = {}
+    if meta_path.exists():
+        try:
+            meta = json.loads(meta_path.read_text(encoding="utf-8"))
+        except Exception:
+            meta = {}
+
+    site_title = (meta.get("site_title") or repo_name).strip()
+    description = (meta.get("description") or "").strip()
+    author = (meta.get("author") or "").strip()
+    template = (meta.get("template") or "").strip()
+    port = _get_running_port(repo_name)
+    local_url = f"http://localhost:{port}" if port else ""
+    favicon_url = _local_favicon_from_repo(repo_path)
+    return {
+        "id": f"{LOCAL_SITE_PREFIX}{repo_name}",
+        "name": site_title,
+        "url": local_url,
+        "ssl_url": local_url,
+        "admin_url": "",
+        "deploy_url": "",
+        "repo": "",
+        "repo_name": repo_name,
+        "is_cloned": True,
+        "repo_path": str(repo_path.resolve()),
+        "has_github_repo": False,
+        "clone_status": "cloned",
+        "is_running": bool(port),
+        "port": port,
+        "can_clone": False,
+        "favicon_url": favicon_url,
+        "live_meta": {
+            "base_url": local_url,
+            "domain": f"localhost:{port}" if port else "localhost",
+            "ok": bool(port),
+            "status_code": 200 if port else None,
+            "title": site_title,
+            "description": description,
+            "og_title": site_title,
+            "og_description": description,
+            "og_image": "",
+            "og_site_name": site_title,
+            "canonical_url": local_url,
+            "theme_color": "",
+            "favicon_url": favicon_url,
+        },
+        "contacts": [],
+        "site_type": "local_generated",
+        "site_author": author,
+        "site_template": template,
+    }
+
+
+def _list_local_sites() -> list[dict]:
+    base = Path(NEW_SITES_DIR).resolve()
+    if not base.exists():
+        return []
+    local_sites = []
+    for candidate in base.iterdir():
+        if not candidate.is_dir():
+            continue
+        if not _is_git_repo(candidate):
+            continue
+        local_sites.append(_build_local_site(candidate))
+    local_sites.sort(key=lambda item: (item.get("name") or "").lower())
+    return local_sites
+
+
+def _list_netlify_sites() -> list[dict]:
+    if not command_exists("netlify"):
+        return []
     res = subprocess.run(["netlify", "sites:list", "--json"], capture_output=True, text=True)
-    sites = json.loads(res.stdout or "[]")
-    site = next((item for item in sites if item.get("id") == site_id), None)
+    if res.returncode != 0:
+        return []
+    try:
+        return json.loads(res.stdout or "[]")
+    except json.JSONDecodeError:
+        return []
+
+
+def _find_site_by_id(site_id: str) -> dict:
+    if site_id.startswith(LOCAL_SITE_PREFIX):
+        site = next((item for item in _list_local_sites() if item.get("id") == site_id), None)
+        if not site:
+            raise HTTPException(status_code=404, detail="Local site not found")
+        return site
+
+    site = next((item for item in _list_netlify_sites() if item.get("id") == site_id), None)
     if not site:
         raise HTTPException(status_code=404, detail="Site not found")
     return site
@@ -243,19 +344,13 @@ def _fetch_live_metadata(site: dict) -> dict:
 def get_sites():
     config = get_config()
     contacts = config.get("site_contacts", {})
-    res = subprocess.run(["netlify", "sites:list", "--json"], capture_output=True, text=True)
-    sites = json.loads(res.stdout or "[]")
+    sites = _list_netlify_sites()
     processed = []
     for site in sites:
         repo_meta = _resolve_site_repo(site)
         repo_name = repo_meta["repo_name"]
-        is_running = False
-        if repo_name:
-            container_name = f"ghost_{repo_name.lower().replace('.', '_')}"
-            check = subprocess.run(
-                ["podman", "inspect", "-f", "{{.State.Running}}", container_name], capture_output=True, text=True
-            )
-            is_running = check.stdout.strip() == "true"
+        port = _get_running_port(repo_name)
+        is_running = port is not None
         live_meta = _fetch_live_metadata(site)
         favicon_url = live_meta.get("favicon_url") or ""
         processed.append(
@@ -273,13 +368,19 @@ def get_sites():
                 "has_github_repo": repo_meta["has_github_repo"],
                 "clone_status": repo_meta["clone_status"],
                 "is_running": is_running,
-                "port": active_containers.get(repo_name, {}).get("port") if is_running else None,
+                "port": port,
                 "can_clone": repo_meta["has_github_repo"] and not repo_meta["is_cloned"],
                 "favicon_url": favicon_url,
                 "live_meta": live_meta,
                 "contacts": contacts.get(site.get("id"), []),
             }
         )
+
+    netlify_repo_paths = {item.get("repo_path") for item in processed if item.get("repo_path")}
+    for local_site in _list_local_sites():
+        if local_site.get("repo_path") in netlify_repo_paths:
+            continue
+        processed.append(local_site)
     return processed
 
 
@@ -296,6 +397,8 @@ def clone_repo(repo_url: str):
 @router.get("/api/sites/{site_id}/metadata")
 def get_site_metadata(site_id: str, force_refresh: bool = False):
     site = _find_site_by_id(site_id)
+    if site_id.startswith(LOCAL_SITE_PREFIX):
+        return site.get("live_meta") or {"base_url": "", "ok": False}
     if force_refresh:
         SITE_META_CACHE.pop(site.get("id") or "", None)
     return _fetch_live_metadata(site)
@@ -304,11 +407,16 @@ def get_site_metadata(site_id: str, force_refresh: bool = False):
 @router.get("/api/sites/{site_id}/assets")
 def get_site_assets(site_id: str):
     site = _find_site_by_id(site_id)
-    repo_meta = _resolve_site_repo(site)
-    if not repo_meta["is_cloned"] or not repo_meta["repo_path"]:
-        raise HTTPException(status_code=404, detail="No local repo clone available for this site")
+    if site_id.startswith(LOCAL_SITE_PREFIX):
+        repo_path = Path(site.get("repo_path") or "").resolve()
+        if not _is_git_repo(repo_path):
+            raise HTTPException(status_code=404, detail="No local git repo available for this site")
+    else:
+        repo_meta = _resolve_site_repo(site)
+        if not repo_meta["is_cloned"] or not repo_meta["repo_path"]:
+            raise HTTPException(status_code=404, detail="No local repo clone available for this site")
+        repo_path = Path(repo_meta["repo_path"]).resolve()
 
-    repo_path = Path(repo_meta["repo_path"]).resolve()
     base_dir = Path(BASE_CLONE_DIR).resolve()
     if base_dir not in repo_path.parents and repo_path != base_dir:
         raise HTTPException(status_code=400, detail="Invalid repo path")

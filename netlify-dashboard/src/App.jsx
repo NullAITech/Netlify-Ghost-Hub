@@ -118,6 +118,17 @@ export default function App() {
           '0%': { transform: 'translateY(0px)' },
           '50%': { transform: 'translateY(-14px)' },
           '100%': { transform: 'translateY(0px)' }
+        },
+        '@keyframes ghostGlitch': {
+          '0%, 92%, 100%': { transform: 'translate3d(0,0,0)', filter: 'hue-rotate(0deg) saturate(1)' },
+          '93%': { transform: 'translate3d(-3px, 1px, 0)', filter: 'hue-rotate(14deg) saturate(1.4)' },
+          '94%': { transform: 'translate3d(3px, -2px, 0)', filter: 'hue-rotate(-12deg) saturate(1.35)' },
+          '95%': { transform: 'translate3d(-2px, 1px, 0)', filter: 'hue-rotate(8deg) saturate(1.2)' }
+        },
+        '@keyframes ghostTilt': {
+          '0%': { transform: 'perspective(600px) rotateY(0deg) rotateX(0deg)' },
+          '50%': { transform: 'perspective(600px) rotateY(8deg) rotateX(-4deg)' },
+          '100%': { transform: 'perspective(600px) rotateY(0deg) rotateX(0deg)' }
         }
       }}
     >
@@ -133,7 +144,8 @@ export default function App() {
           opacity: 0.18,
           filter: 'drop-shadow(0 0 38px rgba(107, 248, 255, 0.35))',
           pointerEvents: 'none',
-          zIndex: 0
+          zIndex: 0,
+          animation: 'ghostGlitch 8.5s steps(1, end) infinite'
         }}
       />
       <Box
@@ -148,7 +160,9 @@ export default function App() {
           opacity: 0.08,
           zIndex: 0,
           pointerEvents: 'none',
-          animation: 'ghostDrift 9s ease-in-out infinite'
+          animation: 'ghostDrift 9s ease-in-out infinite, ghostTilt 11s ease-in-out infinite',
+          transformStyle: 'preserve-3d',
+          filter: 'drop-shadow(0 0 14px rgba(112, 228, 255, 0.24))'
         }}
       />
       <Box
@@ -163,7 +177,7 @@ export default function App() {
           opacity: 0.07,
           zIndex: 0,
           pointerEvents: 'none',
-          animation: 'ghostDrift 11s ease-in-out infinite reverse'
+          animation: 'ghostDrift 11s ease-in-out infinite reverse, ghostGlitch 12s steps(1, end) infinite'
         }}
       />
       <Box
@@ -179,7 +193,8 @@ export default function App() {
           pointerEvents: 'none',
           zIndex: 0,
           transform: `translate(${pointerPos.x * 0.035 + 10}px, ${pointerPos.y * 0.035 + 16}px)`,
-          transition: 'transform 260ms ease-out'
+          transition: 'transform 260ms ease-out',
+          filter: 'drop-shadow(0 0 10px rgba(99, 240, 255, 0.3))'
         }}
       />
       <Box
@@ -202,7 +217,8 @@ export default function App() {
                 width: 34,
                 height: 34,
                 border: '1px solid rgba(111, 247, 255, 0.7)',
-                boxShadow: '0 0 20px rgba(111, 247, 255, 0.3)'
+                boxShadow: '0 0 20px rgba(111, 247, 255, 0.3)',
+                animation: 'ghostGlitch 10s steps(1, end) infinite'
               }}
             />
             <Typography variant="h6">Netlify Ghost Hub</Typography>
@@ -261,7 +277,9 @@ export default function App() {
                   top: { xs: -15, md: -32 },
                   width: { xs: 150, md: 210 },
                   opacity: 0.24,
-                  pointerEvents: 'none'
+                  pointerEvents: 'none',
+                  filter: 'drop-shadow(0 0 18px rgba(117, 240, 255, 0.32))',
+                  animation: 'ghostTilt 12s ease-in-out infinite'
                 }}
               />
               <CardContent sx={{ overflowY: 'auto' }}>
@@ -412,10 +430,16 @@ export default function App() {
             border: '1px solid rgba(111, 247, 255, 0.42)',
             background: 'rgba(3, 10, 22, 0.65)',
             backdropFilter: 'blur(6px)',
-            '&:hover': { background: 'rgba(7, 24, 48, 0.86)' }
+            '&:hover': { background: 'rgba(7, 24, 48, 0.86)' },
+            animation: 'ghostDrift 5.8s ease-in-out infinite'
           }}
         >
-          <Box component="img" src="/ghostbyte.png" alt="Ghost buddy" sx={{ width: 28, opacity: 0.86 }} />
+          <Box
+            component="img"
+            src="/ghostbyte.png"
+            alt="Ghost buddy"
+            sx={{ width: 28, opacity: 0.86, filter: 'drop-shadow(0 0 6px rgba(108, 241, 255, 0.38))' }}
+          />
         </Button>
         <Fade in={ghostHintOpen}>
           <Card

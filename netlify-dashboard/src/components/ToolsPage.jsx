@@ -86,10 +86,11 @@ export default function ToolsPage({ apiBase, onRepoCreated }) {
   const [ffResult, setFfResult] = useState('');
 
   const [repoForm, setRepoForm] = useState({
-    name: '',
+    site_name: '',
+    template: 'vite-vanilla-js',
+    site_title: '',
+    author: '',
     description: '',
-    visibility: 'private',
-    create_github: true
   });
   const [repoResult, setRepoResult] = useState('');
   const [mediaLibrary, setMediaLibrary] = useState([]);
@@ -245,12 +246,14 @@ export default function ToolsPage({ apiBase, onRepoCreated }) {
     }
   };
 
-  const createRepo = () =>
+  const createSite = () =>
     handleRun('repo', async () => {
-      setRepoResult('Creating repository...');
+      setRepoResult('Creating site scaffold...');
       try {
-        const res = await axios.post(`${apiBase}/api/tools/repo/create`, repoForm);
-        setRepoResult(`Success\nRepo path: ${res.data.repo_path}\nGitHub: ${res.data.github.message}`);
+        const res = await axios.post(`${apiBase}/api/tools/site/create`, repoForm);
+        setRepoResult(
+          `Success\nSite ID: ${res.data.site_id}\nSite path: ${res.data.site_path}\nTemplate: ${res.data.template}\nRoot folder: ${res.data.root_folder}\nGit: ${res.data.git}`
+        );
         onRepoCreated?.();
       } catch (e) {
         setRepoResult(`Error: ${e.response?.data?.detail || e.message}`);
@@ -412,7 +415,7 @@ export default function ToolsPage({ apiBase, onRepoCreated }) {
         >
           <Tab icon={<DownloadIcon />} label="yt-dlp Download" />
           <Tab icon={<TransformIcon />} label="ffmpeg Convert" />
-          <Tab icon={<CreateNewFolderIcon />} label="Create Repo" />
+          <Tab icon={<CreateNewFolderIcon />} label="Create Site" />
           <Tab icon={<TravelExploreIcon />} label="Native Linux" />
         </Tabs>
 
@@ -825,9 +828,37 @@ export default function ToolsPage({ apiBase, onRepoCreated }) {
             {repoSection === 'form' && (
               <Stack spacing={1.5}>
                 <TextField
-                  label="Repository Name"
-                  value={repoForm.name}
-                  onChange={(event) => setRepoForm({ ...repoForm, name: event.target.value })}
+                  select
+                  label="Site Template"
+                  value={repoForm.template}
+                  onChange={(event) => setRepoForm({ ...repoForm, template: event.target.value })}
+                  fullWidth
+                  size="small"
+                >
+                  <MenuItem value="vite-vanilla-js">Vite Vanilla JS</MenuItem>
+                  <MenuItem value="astro-js">Astro JS</MenuItem>
+                  <MenuItem value="vite-react-jsx">Vite React JSX</MenuItem>
+                  <MenuItem value="vite-react-tsx">Vite React TSX</MenuItem>
+                </TextField>
+                <TextField
+                  label="Site Folder Name"
+                  value={repoForm.site_name}
+                  onChange={(event) => setRepoForm({ ...repoForm, site_name: event.target.value })}
+                  fullWidth
+                  size="small"
+                  helperText="Created under sentinel_clones/idk new sites folder"
+                />
+                <TextField
+                  label="Site Title"
+                  value={repoForm.site_title}
+                  onChange={(event) => setRepoForm({ ...repoForm, site_title: event.target.value })}
+                  fullWidth
+                  size="small"
+                />
+                <TextField
+                  label="Author"
+                  value={repoForm.author}
+                  onChange={(event) => setRepoForm({ ...repoForm, author: event.target.value })}
                   fullWidth
                   size="small"
                 />
@@ -840,46 +871,20 @@ export default function ToolsPage({ apiBase, onRepoCreated }) {
                   fullWidth
                   size="small"
                 />
-                <Grid container spacing={1.5} alignItems="center">
-                  <Grid item xs={12} md={6}>
-                    <TextField
-                      select
-                      label="Visibility"
-                      value={repoForm.visibility}
-                      onChange={(event) => setRepoForm({ ...repoForm, visibility: event.target.value })}
-                      fullWidth
-                      size="small"
-                    >
-                      <MenuItem value="private">Private</MenuItem>
-                      <MenuItem value="public">Public</MenuItem>
-                    </TextField>
-                  </Grid>
-                  <Grid item xs={12} md={6}>
-                    <FormControlLabel
-                      control={
-                        <Checkbox
-                          checked={repoForm.create_github}
-                          onChange={(event) => setRepoForm({ ...repoForm, create_github: event.target.checked })}
-                        />
-                      }
-                      label="Also create on GitHub"
-                    />
-                  </Grid>
-                </Grid>
                 <Button
                   variant="contained"
-                  onClick={createRepo}
-                  disabled={loading.repo || !repoForm.name}
+                  onClick={createSite}
+                  disabled={loading.repo || !repoForm.site_name}
                   startIcon={loading.repo ? <CircularProgress size={18} /> : <CreateNewFolderIcon />}
                 >
-                  {loading.repo ? 'Creating...' : 'Create Repository'}
+                  {loading.repo ? 'Creating...' : 'Create New Site'}
                 </Button>
               </Stack>
             )}
 
             {repoSection === 'output' && (
               <TextField
-                label="Repository Output"
+                label="Site Creation Output"
                 value={repoResult}
                 multiline
                 minRows={8}

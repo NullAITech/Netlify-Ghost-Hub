@@ -40,7 +40,7 @@ export default function SiteWorkspace({ site, apiBase, onBack, onRefresh }) {
   ];
 
   const canOpenCodex = useMemo(() => {
-    return Boolean(site.has_github_repo && site.is_cloned && site.repo_path);
+    return Boolean(site.is_cloned && site.repo_path);
   }, [site]);
 
   useEffect(() => {
@@ -144,7 +144,7 @@ export default function SiteWorkspace({ site, apiBase, onBack, onRefresh }) {
       )}
       {!canOpenCodex && (
         <Alert severity="info" sx={{ mb: 2 }}>
-          Codex Tool GUI is enabled only when this site has a GitHub repo linked and cloned locally.
+          Codex Tool GUI is enabled when this site has a local git repo path available.
         </Alert>
       )}
 

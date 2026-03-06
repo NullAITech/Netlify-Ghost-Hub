@@ -1,3 +1,4 @@
+import json
 import re
 import shlex
 import subprocess
@@ -6,7 +7,7 @@ from pathlib import Path
 
 from fastapi import APIRouter, File, HTTPException, UploadFile
 
-from ..state import BASE_CLONE_DIR, DOWNLOADS_DIR, FFMPEG_INBOX_DIR
+from ..state import DOWNLOADS_DIR, FFMPEG_INBOX_DIR, NEW_SITES_DIR
 from ..utils import command_exists, sanitize_repo_name
 
 router = APIRouter()
@@ -239,37 +240,327 @@ def ffmpeg_inbox():
     }
 
 
-@router.post("/api/tools/repo/create")
-def create_repo(data: dict):
+ALLOWED_SITE_TEMPLATES = {
+    "vite-vanilla-js",
+    "astro-js",
+    "vite-react-jsx",
+    "vite-react-tsx",
+}
+
+
+def _write_text(path: Path, content: str):
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(content, encoding="utf-8")
+
+
+def _create_common_files(site_path: Path, site_name: str, site_title: str, author: str, description: str, template: str):
+    _write_text(
+        site_path / ".gitignore",
+        "\n".join(
+            [
+                "node_modules/",
+                "dist/",
+                ".astro/",
+                ".DS_Store",
+                "*.log",
+                ".env",
+                ".env.*",
+            ]
+        )
+        + "\n",
+    )
+    _write_text(
+        site_path / "site.meta.json",
+        json.dumps(
+            {
+                "site_name": site_name,
+                "site_title": site_title,
+                "author": author,
+                "description": description,
+                "template": template,
+            },
+            indent=2,
+        )
+        + "\n",
+    )
+    _write_text(site_path / "README.md", f"# {site_title}\n\n{description}\n")
+
+
+def _scaffold_vite_vanilla(site_path: Path, site_name: str, site_title: str, author: str, description: str):
+    _write_text(
+        site_path / "package.json",
+        json.dumps(
+            {
+                "name": site_name,
+                "private": True,
+                "version": "0.1.0",
+                "type": "module",
+                "scripts": {"dev": "vite", "build": "vite build", "preview": "vite preview"},
+                "devDependencies": {"vite": "^7.0.0"},
+            },
+            indent=2,
+        )
+        + "\n",
+    )
+    _write_text(
+        site_path / "index.html",
+        f"""<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="description" content="{description}" />
+    <meta name="author" content="{author}" />
+    <title>{site_title}</title>
+  </head>
+  <body>
+    <div id="app"></div>
+    <script type="module" src="/src/main.js"></script>
+  </body>
+</html>
+""",
+    )
+    _write_text(
+        site_path / "src/main.js",
+        f"""import './style.css';
+
+const app = document.querySelector('#app');
+app.innerHTML = `
+  <main class="wrap">
+    <h1>{site_title}</h1>
+    <p>{description}</p>
+    <small>By {author}</small>
+  </main>
+`;
+""",
+    )
+    _write_text(
+        site_path / "src/style.css",
+        """* { box-sizing: border-box; }
+body { margin: 0; font-family: Arial, sans-serif; background: #0b1020; color: #e8f1ff; }
+.wrap { min-height: 100vh; display: grid; place-content: center; gap: 0.8rem; padding: 2rem; text-align: center; }
+h1 { margin: 0; font-size: clamp(2rem, 4vw, 3rem); }
+p { margin: 0; color: #b4c8ea; }
+small { color: #7ea0d1; }
+""",
+    )
+    _write_text(
+        site_path / "vite.config.js",
+        """import { defineConfig } from 'vite';
+
+export default defineConfig({});
+""",
+    )
+
+
+def _scaffold_vite_react(site_path: Path, site_name: str, site_title: str, author: str, description: str, use_ts: bool):
+    ext = "tsx" if use_ts else "jsx"
+    entry_file = "main.tsx" if use_ts else "main.jsx"
+    app_file = f"App.{ext}"
+    package_json = {
+        "name": site_name,
+        "private": True,
+        "version": "0.1.0",
+        "type": "module",
+        "scripts": {"dev": "vite", "build": "vite build", "preview": "vite preview"},
+        "dependencies": {"react": "^19.0.0", "react-dom": "^19.0.0"},
+        "devDependencies": {"@vitejs/plugin-react": "^5.0.0", "vite": "^7.0.0"},
+    }
+    if use_ts:
+        package_json["devDependencies"].update({"typescript": "^5.8.0", "@types/react": "^19.0.0", "@types/react-dom": "^19.0.0"})
+
+    _write_text(site_path / "package.json", json.dumps(package_json, indent=2) + "\n")
+    _write_text(
+        site_path / "index.html",
+        f"""<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="description" content="{description}" />
+    <meta name="author" content="{author}" />
+    <title>{site_title}</title>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/{entry_file}"></script>
+  </body>
+</html>
+""",
+    )
+    _write_text(
+        site_path / f"src/{entry_file}",
+        f"""import React from 'react';
+import ReactDOM from 'react-dom/client';
+import App from './{app_file}';
+import './index.css';
+
+ReactDOM.createRoot(document.getElementById('root')).render(
+  <React.StrictMode>
+    <App />
+  </React.StrictMode>
+);
+""",
+    )
+    _write_text(
+        site_path / f"src/{app_file}",
+        f"""export default function App() {{
+  return (
+    <main className="wrap">
+      <h1>{site_title}</h1>
+      <p>{description}</p>
+      <small>By {author}</small>
+    </main>
+  );
+}}
+""",
+    )
+    _write_text(
+        site_path / "src/index.css",
+        """* { box-sizing: border-box; }
+body { margin: 0; font-family: Arial, sans-serif; background: #0a1326; color: #edf4ff; }
+.wrap { min-height: 100vh; display: grid; place-content: center; gap: 0.8rem; padding: 2rem; text-align: center; }
+h1 { margin: 0; font-size: clamp(2rem, 4vw, 3rem); }
+p { margin: 0; color: #bed0ea; }
+small { color: #89a7d4; }
+""",
+    )
+    _write_text(
+        site_path / "vite.config.js",
+        """import { defineConfig } from 'vite';
+import react from '@vitejs/plugin-react';
+
+export default defineConfig({
+  plugins: [react()],
+});
+""",
+    )
+    if use_ts:
+        _write_text(
+            site_path / "tsconfig.json",
+            """{
+  "compilerOptions": {
+    "target": "ES2020",
+    "lib": ["ES2020", "DOM", "DOM.Iterable"],
+    "module": "ESNext",
+    "skipLibCheck": true,
+    "moduleResolution": "Bundler",
+    "resolveJsonModule": true,
+    "isolatedModules": true,
+    "noEmit": true,
+    "jsx": "react-jsx",
+    "strict": true
+  },
+  "include": ["src"]
+}
+""",
+        )
+
+
+def _scaffold_astro(site_path: Path, site_name: str, site_title: str, author: str, description: str):
+    _write_text(
+        site_path / "package.json",
+        json.dumps(
+            {
+                "name": site_name,
+                "private": True,
+                "version": "0.1.0",
+                "type": "module",
+                "scripts": {"dev": "astro dev", "build": "astro build", "preview": "astro preview"},
+                "dependencies": {"astro": "^5.0.0"},
+            },
+            indent=2,
+        )
+        + "\n",
+    )
+    _write_text(
+        site_path / "astro.config.mjs",
+        """import { defineConfig } from 'astro/config';
+
+export default defineConfig({});
+""",
+    )
+    _write_text(
+        site_path / "src/layouts/Layout.astro",
+        f"""---
+const {{ title = '{site_title}', description = '{description}', author = '{author}' }} = Astro.props;
+---
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width" />
+    <meta name="description" content={{description}} />
+    <meta name="author" content={{author}} />
+    <title>{{title}}</title>
+  </head>
+  <body>
+    <slot />
+  </body>
+</html>
+""",
+    )
+    _write_text(
+        site_path / "src/pages/index.astro",
+        f"""---
+import Layout from '../layouts/Layout.astro';
+---
+<Layout title="{site_title}" description="{description}" author="{author}">
+  <main style="min-height:100vh;display:grid;place-content:center;gap:.8rem;padding:2rem;text-align:center;background:#0b1020;color:#e8f1ff;font-family:Arial,sans-serif;">
+    <h1 style="margin:0;">{site_title}</h1>
+    <p style="margin:0;color:#b4c8ea;">{description}</p>
+    <small style="color:#7ea0d1;">By {author}</small>
+  </main>
+</Layout>
+""",
+    )
+
+
+@router.post("/api/tools/site/create")
+def create_site(data: dict):
     payload = data or {}
-    repo_name = sanitize_repo_name(payload.get("name", ""))
-    repo_path = Path(BASE_CLONE_DIR) / repo_name
-    if repo_path.exists():
-        raise HTTPException(status_code=409, detail="Exists")
+    template = str(payload.get("template", "")).strip().lower()
+    if template not in ALLOWED_SITE_TEMPLATES:
+        raise HTTPException(status_code=400, detail=f"template must be one of: {', '.join(sorted(ALLOWED_SITE_TEMPLATES))}")
 
-    repo_path.mkdir(parents=True)
-    (repo_path / "README.md").write_text(f"# {repo_name}\n{payload.get('description', '')}")
+    site_name = sanitize_repo_name(payload.get("site_name", ""))
+    site_title = (payload.get("site_title") or site_name).strip()
+    author = (payload.get("author") or "Unknown Author").strip()
+    description = (payload.get("description") or "Generated by Netlify Ghost Hub").strip()
 
-    subprocess.run(["git", "init", "-b", "main"], cwd=str(repo_path))
-    subprocess.run(["git", "add", "."], cwd=str(repo_path))
-    subprocess.run(["git", "commit", "-m", "Initial commit"], cwd=str(repo_path))
+    base_dir = Path(NEW_SITES_DIR).resolve()
+    base_dir.mkdir(parents=True, exist_ok=True)
+    site_path = (base_dir / site_name).resolve()
+    if site_path.exists():
+        raise HTTPException(status_code=409, detail="Site folder already exists")
 
-    gh_res = {"message": "Local only"}
-    if payload.get("create_github") and command_exists("gh"):
-        gh_cmd = [
-            "gh",
-            "repo",
-            "create",
-            repo_name,
-            "--source",
-            str(repo_path),
-            "--push",
-            "--private" if payload.get("visibility") == "private" else "--public",
-        ]
-        res = subprocess.run(gh_cmd, capture_output=True, text=True)
-        gh_res["message"] = "GitHub Created" if res.returncode == 0 else res.stderr
+    site_path.mkdir(parents=True)
+    _create_common_files(site_path, site_name, site_title, author, description, template)
+    if template == "vite-vanilla-js":
+        _scaffold_vite_vanilla(site_path, site_name, site_title, author, description)
+    elif template == "astro-js":
+        _scaffold_astro(site_path, site_name, site_title, author, description)
+    elif template == "vite-react-jsx":
+        _scaffold_vite_react(site_path, site_name, site_title, author, description, use_ts=False)
+    elif template == "vite-react-tsx":
+        _scaffold_vite_react(site_path, site_name, site_title, author, description, use_ts=True)
 
-    return {"status": "ok", "repo_path": str(repo_path.resolve()), "github": gh_res}
+    git_status = "git_missing"
+    if command_exists("git"):
+        res = subprocess.run(["git", "init", "-b", "main"], cwd=str(site_path), capture_output=True, text=True)
+        if res.returncode != 0:
+            subprocess.run(["git", "init"], cwd=str(site_path), capture_output=True, text=True)
+        git_status = "initialized"
+
+    return {
+        "status": "ok",
+        "site_id": f"local:{site_name}",
+        "site_name": site_name,
+        "site_path": str(site_path),
+        "template": template,
+        "root_folder": str(base_dir),
+        "git": git_status,
+    }
 
 
 @router.get("/api/tools/downloads/media")

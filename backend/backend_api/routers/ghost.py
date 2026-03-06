@@ -9,10 +9,21 @@ from ..utils import ensure_podman_service, get_free_port
 router = APIRouter()
 
 
+def _resolve_repo_path(repo_name: str) -> str:
+    direct = os.path.join(BASE_CLONE_DIR, repo_name)
+    if os.path.isdir(direct):
+        return direct
+
+    for root, dirs, _ in os.walk(BASE_CLONE_DIR):
+        if repo_name in dirs:
+            return os.path.join(root, repo_name)
+    return ""
+
+
 @router.post("/api/ghost/start/{repo_name}")
 async def start_container(repo_name: str):
     ensure_podman_service()
-    repo_path = os.path.join(BASE_CLONE_DIR, repo_name)
+    repo_path = _resolve_repo_path(repo_name)
     if not os.path.exists(repo_path):
         raise HTTPException(status_code=404, detail="Repo not cloned.")
 
